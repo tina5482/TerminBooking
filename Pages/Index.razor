@@ -1,0 +1,114 @@
+﻿@page "/"
+@using TerminBooking.Data
+@using TerminBooking.Domain
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<h3>Bookirani termini — danas</h3>
+
+<div class="d-flex gap-2 mb-3">
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadToday" disabled="@_isLoading">
+        @(_isLoading ? "Učitavam…" : "Osvježi")
+    </button>
+    <span class="text-muted small align-self-center">
+        Auto-osvježavanje svakih 15 s.
+    </span>
+</div>
+
+@if (_isLoading && booked.Count == 0)
+{
+    <div>Učitavanje…</div>
+}
+else if (booked.Count == 0)
+{
+    <div>Nema bookiranih termina za danas.</div>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Vrijeme</th>
+                <th>Djelatnik</th>
+                <th>Usluga</th>
+                <th>Napomena</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in booked)
+            {
+                <tr>
+                    <td>@a.Start.ToString("HH:mm")–@a.End.ToString("HH:mm")</td>
+                    <td>@a.Staff?.Name</td>
+                    <td>@a.Service?.Name</td>
+                    <td>@a.Notes</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code
+{
+    private List<Appointment> booked = new();
+    private bool _isLoading;
+
+    private System.Threading.PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadToday();
+
+        // auto-refresh svakih 15s
+        _cts = new CancellationTokenSource();
+        _timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(15));
+        _ = AutoRefreshAsync();
+    }
+
+    private async Task AutoRefreshAsync()
+    {
+        if (_timer is null || _cts is null) return;
+
+        try
+        {
+            while (await _timer.WaitForNextTickAsync(_cts.Token))
+            {
+                await LoadToday();
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+    }
+
+    private async Task LoadToday()
+    {
+        _isLoading = true;
+
+        var start = DateTime.Today;
+        var end = start.AddDays(1);
+
+        booked = await Db.Appointments
+            .AsNoTracking()
+            .Include(a => a.Staff)
+            .Include(a => a.Service)
+            .Where(a => a.Status == AppointmentStatus.Booked
+                     && a.Start >= start
+                     && a.End < end)
+            .OrderBy(a => a.Start)
+            .ToListAsync();
+
+        _isLoading = false;
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _timer?.Dispose();
+        _cts?.Dispose();
+    }
+}

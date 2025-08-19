@@ -1,0 +1,316 @@
+﻿@page "/appointments"
+@using TerminBooking.Data
+@using TerminBooking.Domain
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<h3>Upravljanje terminima</h3>
+
+<!-- Odabir djelatnika -->
+<div class="mb-3">
+    <label class="form-label">Djelatnik</label>
+    <select class="form-select" value="@SelectedStaffIdString" @onchange="OnStaffChanged">
+        <option value="">-- Odaberi djelatnika --</option>
+        @foreach (var s in staffList)
+        {
+            <option value="@s.Id">@s.Name</option>
+        }
+    </select>
+</div>
+
+<!-- Datum -->
+<div class="mb-3">
+    <label class="form-label">Datum</label>
+    <InputDate @bind-Value="SelectedDate" TValue="DateTime" class="form-control" />
+</div>
+
+@if (!SelectedStaffId.HasValue)
+{
+    <div class="alert alert-warning">Odaberi djelatnika kako bi vidjela njegove bookirane termine.</div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5>Bookirani termini — @CurrentStaffName — @SelectedDate.ToString("yyyy-MM-dd") (@booked.Count)</h5>
+        <button class="btn btn-primary" @onclick="() => showAddBlock = true">Dodaj blok (Booked)</button>
+    </div>
+
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr>
+                <th>Početak</th>
+                <th>Kraj</th>
+                <th>Usluga</th>
+                <th>Klijent</th>
+                <th>Napomena</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (booked.Count == 0)
+            {
+                <tr><td colspan="6" class="text-muted">Nema bookiranih termina za ovaj dan.</td></tr>
+            }
+            else
+            {
+                @foreach (var a in booked)
+                {
+                    <tr>
+                        <td>@a.Start.ToString("HH:mm")</td>
+                        <td>@a.End.ToString("HH:mm")</td>
+                        <td>@a.Service?.Name</td>
+                        <td>@a.Client?.FullName</td>
+                        <td>@a.Notes</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteBookingAsync(a.Id)">Obriši</button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+<!-- Modal: Dodaj blok (Booked) -->
+@if (showAddBlock)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.3);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Dodaj blok (Booked)</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddBlock"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Usluga</label>
+                        <select class="form-select" @onchange="OnServiceChanged">
+                            <option value="">-- Odaberi --</option>
+                            @foreach (var s in servicesForStaff)
+                            {
+                                <option value="@s.Id" selected="@(add_ServiceId == s.Id)">
+                                    @s.Name (@s.DurationMin min)
+                                </option>
+                            }
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col">
+                            <label class="form-label">Početak</label>
+                            <input type="time" class="form-control" value="@add_StartTime" @onchange="OnStartTimeChanged" />
+                        </div>
+                        <div class="col">
+                            <label class="form-label">Kraj</label>
+                            <input type="time" class="form-control" value="@add_EndTime" @onchange="OnEndTimeChanged" />
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label">Napomena (opcionalno)</label>
+                        <input class="form-control" value="@add_Notes" @onchange="OnNotesChanged" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(error))
+                    {
+                        <div class="alert alert-danger mt-2">@error</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseAddBlock">Odustani</button>
+                    <button class="btn btn-primary" @onclick="SaveAddBlockAsync" disabled="@isSaving">Spremi</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ===== State =====
+    private List<Staff> staffList = new();
+    private int? SelectedStaffId { get; set; }
+    private string SelectedStaffIdString => SelectedStaffId?.ToString() ?? "";
+
+    private DateTime _selectedDate = DateTime.Today;
+    private DateTime SelectedDate
+    {
+        get => _selectedDate;
+        set
+        {
+            if (_selectedDate != value)
+            {
+                _selectedDate = value;
+                _ = LoadDayAsync();
+            }
+        }
+    }
+
+    private string CurrentStaffName => staffList.FirstOrDefault(s => s.Id == SelectedStaffId)?.Name ?? "";
+
+    private List<Appointment> booked = new();
+    private List<Service> servicesForStaff = new();
+
+    // modal state — SVE string/broj (NEMA TimeOnly?)
+    private bool showAddBlock = false;
+    private string add_StartTime = "09:00"; // "HH:mm"
+    private string add_EndTime = "10:00"; // "HH:mm"
+    private int? add_ServiceId;
+    private string? add_Notes;
+    private string? error;
+    private bool isSaving = false;
+
+    // ===== Lifecycle =====
+    protected override async Task OnInitializedAsync()
+    {
+        staffList = await Db.Staff.Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync();
+        if (staffList.Any())
+            SelectedStaffId = staffList.First().Id;
+
+        await LoadDayAsync();
+    }
+
+    // ===== UI handlers =====
+    private async Task OnStaffChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e?.Value?.ToString(), out var id))
+            SelectedStaffId = id;
+        else
+            SelectedStaffId = null;
+
+        await LoadDayAsync();
+    }
+
+    private void OnServiceChanged(ChangeEventArgs e)
+    {
+        add_ServiceId = int.TryParse(e?.Value?.ToString(), out var id) ? id : (int?)null;
+    }
+
+    private void OnStartTimeChanged(ChangeEventArgs e)
+    {
+        add_StartTime = e?.Value?.ToString() ?? add_StartTime;
+    }
+
+    private void OnEndTimeChanged(ChangeEventArgs e)
+    {
+        add_EndTime = e?.Value?.ToString() ?? add_EndTime;
+    }
+
+    private void OnNotesChanged(ChangeEventArgs e)
+    {
+        add_Notes = e?.Value?.ToString();
+    }
+
+    // ===== Data load =====
+    private async Task LoadDayAsync()
+    {
+        booked.Clear();
+        servicesForStaff.Clear();
+        error = null;
+
+        if (!SelectedStaffId.HasValue)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        var dayStart = new DateTime(SelectedDate.Year, SelectedDate.Month, SelectedDate.Day, 0, 0, 0);
+        var dayEnd = dayStart.AddDays(1);
+
+        booked = await Db.Appointments
+            .Include(a => a.Service)
+            .Include(a => a.Client)
+            .Where(a => a.StaffId == SelectedStaffId.Value &&
+                        a.Status == AppointmentStatus.Booked &&
+                        a.Start >= dayStart && a.Start < dayEnd)
+            .OrderBy(a => a.Start)
+            .ToListAsync();
+
+        servicesForStaff = await Db.Services
+            .Where(s => s.StaffId == SelectedStaffId.Value && s.IsActive)
+            .OrderBy(s => s.Name)
+            .ToListAsync();
+
+        StateHasChanged();
+    }
+
+    // ===== Modal helpers =====
+    private void CloseAddBlock()
+    {
+        showAddBlock = false;
+        error = null;
+        isSaving = false;
+    }
+
+    private async Task SaveAddBlockAsync()
+    {
+        error = null;
+
+        if (!SelectedStaffId.HasValue)
+        {
+            error = "Nema odabranog djelatnika.";
+            return;
+        }
+
+        if (!add_ServiceId.HasValue)
+        {
+            error = "Odaberi uslugu.";
+            return;
+        }
+
+        if (!TimeOnly.TryParse(add_StartTime, out var tStart) ||
+            !TimeOnly.TryParse(add_EndTime, out var tEnd))
+        {
+            error = "Neispravno vrijeme (format HH:mm).";
+            return;
+        }
+
+        var start = DateOnly.FromDateTime(SelectedDate).ToDateTime(tStart);
+        var end = DateOnly.FromDateTime(SelectedDate).ToDateTime(tEnd);
+
+        if (end <= start)
+        {
+            error = "Kraj mora biti nakon početka.";
+            return;
+        }
+
+        // provjera preklapanja s postojećim Booked
+        var overlaps = await Db.Appointments.AnyAsync(a =>
+            a.StaffId == SelectedStaffId.Value &&
+            a.Status == AppointmentStatus.Booked &&
+            a.Start < end && start < a.End);
+
+        if (overlaps)
+        {
+            error = "Preklapa se s postojećim terminom.";
+            return;
+        }
+
+        isSaving = true;
+
+        var appt = new Appointment
+            {
+                StaffId = SelectedStaffId.Value,
+                ServiceId = add_ServiceId.Value,
+                Start = start,
+                End = end,
+                Status = AppointmentStatus.Booked,
+                Notes = add_Notes
+            };
+
+        Db.Appointments.Add(appt);
+        await Db.SaveChangesAsync();
+        isSaving = false;
+
+        CloseAddBlock();
+        await LoadDayAsync();
+    }
+
+    private async Task DeleteBookingAsync(int id)
+    {
+        var appt = await Db.Appointments.FindAsync(id);
+        if (appt is null) return;
+
+        Db.Appointments.Remove(appt);
+        await Db.SaveChangesAsync();
+        await LoadDayAsync();
+    }
+}
