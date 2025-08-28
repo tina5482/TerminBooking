@@ -66,3 +66,13 @@ a, .btn-link {
     .blazor-error-boundary::after {
         content: "An error has occurred."
     }
+/* Agenda look & feel */
+.agenda-list .agenda-item {
+    border-left: 4px solid #d63384;
+}
+
+.badge.bg-agenda {
+    background: #f5e7ef;
+    color: #a61e53;
+    border: 1px solid #e4bed0;
+}

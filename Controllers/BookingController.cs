@@ -1,10 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using TerminBooking.Data;
 using TerminBooking.Domain;
-using TerminBooking.Services;
-using System.ComponentModel.DataAnnotations;
 
 namespace TerminBooking.Controllers;
 
@@ -26,6 +25,17 @@ public class BookingController : ControllerBase
         public string? Notes { get; set; }
     }
 
+    public class BookByStartRequest
+    {
+        public int StaffId { get; set; }
+        public string Date { get; set; } = default!;      // "yyyy-MM-dd"
+        public string StartTime { get; set; } = default!; // "HH:mm"
+        public int ServiceId { get; set; }
+        public string? FullName { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+    }
+
     // ------------ Endpoints ------------
 
     // GET /api/staff
@@ -34,8 +44,8 @@ public class BookingController : ControllerBase
     public async Task<IActionResult> GetStaff()
         => Ok(await _db.Staff
             .Where(s => s.IsActive)
-            .Select(s => new { id = s.Id, name = s.Name, colorHex = s.ColorHex })
-            .OrderBy(s => s.name)
+            .OrderBy(s => s.Name)
+            .Select(s => new { id = s.Id, name = s.Name })
             .ToListAsync());
 
     // GET /api/services?staffId=1
@@ -44,8 +54,8 @@ public class BookingController : ControllerBase
     public async Task<IActionResult> GetServices([FromQuery] int staffId)
         => Ok(await _db.Services
             .Where(x => x.StaffId == staffId && x.IsActive)
-            .Select(x => new { id = x.Id, name = x.Name, durationMin = x.DurationMin, price = x.Price })
-            .OrderBy(x => x.name)
+            .OrderBy(x => x.Name)
+            .Select(x => new { id = x.Id, name = x.Name, durationMin = x.DurationMin })
             .ToListAsync());
 
     // GET /api/slots?staffId=1&date=yyyy-MM-dd
@@ -55,53 +65,46 @@ public class BookingController : ControllerBase
     {
         if (staffId <= 0) return BadRequest("Invalid staffId.");
         if (string.IsNullOrWhiteSpace(date)) return BadRequest("Missing date (yyyy-MM-dd).");
-
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d))
             return BadRequest("Invalid date format. Use yyyy-MM-dd.");
+
+        // vikend -> nema termina
+        var dayOfWeek = d.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+        if (dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+            return Ok(Array.Empty<object>());
+
+        // radno vrijeme 09–17, 30 min korak
+        var workStart = d.ToDateTime(new TimeOnly(9, 0));
+        var workEnd = d.ToDateTime(new TimeOnly(17, 0));
 
         var dayStart = d.ToDateTime(TimeOnly.MinValue);
         var dayEnd = d.ToDateTime(new TimeOnly(23, 59, 59));
 
-        // Učitaj SVE termine za dan/djelatnika
-        var all = await _db.Appointments
-            .Where(a => a.StaffId == staffId && a.Start >= dayStart && a.End <= dayEnd)
-            .OrderBy(a => a.Start)
-            .AsNoTracking()
+        var booked = await _db.Appointments
+            .Where(a => a.StaffId == staffId
+                     && a.Status == AppointmentStatus.Booked
+                     && a.Start < dayEnd && a.End > dayStart)
+            .Select(a => new { a.Start, a.End })
             .ToListAsync();
 
-        // Booked intervali
-        var booked = all.Where(a => a.Status == TerminBooking.Domain.AppointmentStatus.Booked).ToList();
+        static bool Overlaps(DateTime s1, DateTime e1, DateTime s2, DateTime e2)
+            => s1 < e2 && s2 < e1;
 
-        // Free slotovi koji se NE preklapaju ni s jednim booked intervalom
-        bool Overlaps(Appointment free, Appointment b)
-            => free.Start < b.End && b.Start < free.End;
-
-        var freeNonOverlapping = all
-            .Where(a => a.Status == TerminBooking.Domain.AppointmentStatus.Free)
-            .Where(free => !booked.Any(b => Overlaps(free, b)))
-            .Select(a => new
+        var freeBlocks = new List<object>();
+        for (var cur = workStart; cur < workEnd; cur = cur.AddMinutes(30))
+        {
+            var nxt = cur.AddMinutes(30);
+            var overlaps = booked.Any(b => Overlaps(cur, nxt, b.Start, b.End));
+            if (!overlaps)
             {
-                appointmentId = a.Id,
-                start = a.Start,  // frontend formatira
-                end = a.End
-            })
-            .ToList();
+                freeBlocks.Add(new { start = cur.ToString("yyyy-MM-ddTHH:mm:ss") });
+            }
+        }
 
-        return Ok(freeNonOverlapping);
+        return Ok(freeBlocks);
     }
 
-
-    public class BookByStartRequest
-    {
-        public int StaffId { get; set; }
-        public string Date { get; set; } = default!;  // "yyyy-MM-dd"
-        public string StartTime { get; set; } = default!; // "HH:mm"
-        public int ServiceId { get; set; }
-        public string? FullName { get; set; }
-        public string? Email { get; set; }
-        public string? Phone { get; set; }
-    }
-
+    // POST /api/book-by-start
     [HttpPost("book-by-start")]
     [AllowAnonymous]
     public async Task<IActionResult> BookByStart([FromBody] BookByStartRequest req)
@@ -112,79 +115,73 @@ public class BookingController : ControllerBase
         if (!TimeOnly.TryParse(req.StartTime, out var t))
             return BadRequest("Invalid time.");
 
-        var service = await _db.Services.FirstOrDefaultAsync(s => s.Id == req.ServiceId && s.IsActive);
+        var service = await _db.Services
+            .FirstOrDefaultAsync(s => s.Id == req.ServiceId && s.IsActive);
         if (service == null) return BadRequest("Invalid service.");
-
         if (service.StaffId != req.StaffId)
             return BadRequest("Service does not belong to selected staff.");
 
-        var need = (int)Math.Ceiling(service.DurationMin / 30.0); // koliko 30-min slotova treba
-
         var startDt = d.ToDateTime(t);
-        var dayEnd = d.ToDateTime(new TimeOnly(23, 59, 59));
-        var lastEnd = startDt.AddMinutes(need * 30);
-        if (lastEnd > dayEnd) return Conflict("Out of working hours.");
+        var endDt = startDt.AddMinutes(service.DurationMin);
 
-        // Učitaj kandidatske slotove iz baze (samo 30-min)
-        var candidates = await _db.Appointments
-            .Where(a => a.StaffId == req.StaffId
-                     && a.Status == AppointmentStatus.Free
-                     && a.Start >= startDt
-                     && a.End <= lastEnd
-                     && EF.Functions.DateDiffMinute(a.Start, a.End) == 30)
-            .OrderBy(a => a.Start)
-            .ToListAsync();
+        // provjera preklapanja
+        var overlaps = await _db.Appointments.AnyAsync(a =>
+            a.StaffId == req.StaffId &&
+            a.Status == AppointmentStatus.Booked &&
+            a.Start < endDt && startDt < a.End);
 
-        // Formiraj lanac uzastopnih 30-min od točno startDt duljine "need"
-        var chain = new List<Appointment>();
-        var cur = startDt;
-        for (int i = 0; i < need; i++)
+        if (overlaps) return Conflict("Slot just became unavailable.");
+
+        // upsert klijenta (po emailu, zatim phone, zatim kombinacija)
+        Client? client = null;
+        var email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+        var phone = string.IsNullOrWhiteSpace(req.Phone) ? null : req.Phone.Trim();
+        var name = string.IsNullOrWhiteSpace(req.FullName) ? null : req.FullName.Trim();
+
+        if (!string.IsNullOrWhiteSpace(email))
+            client = await _db.Clients.FirstOrDefaultAsync(c => c.Email == email);
+        if (client is null && !string.IsNullOrWhiteSpace(phone))
+            client = await _db.Clients.FirstOrDefaultAsync(c => c.Phone == phone);
+        if (client is null && name is not null)
+            client = await _db.Clients.FirstOrDefaultAsync(c => c.FullName == name && c.Email == email && c.Phone == phone);
+
+        if (client is null)
         {
-            var slot = candidates.FirstOrDefault(x => x.Start == cur);
-            if (slot == null) return Conflict("Selected start time is no longer available.");
-            chain.Add(slot);
-            cur = cur.AddMinutes(30);
+            client = new Client { FullName = name ?? "", Email = email, Phone = phone };
+            _db.Clients.Add(client);
+            await _db.SaveChangesAsync();
         }
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-
-        // Re-check fresh
-        var ids = chain.Select(c => c.Id).ToArray();
-        var fresh = await _db.Appointments
-            .Where(a => ids.Contains(a.Id))
-            .OrderBy(a => a.Start)
-            .ToListAsync();
-
-        if (fresh.Any(a => a.Status != AppointmentStatus.Free))
-            return Conflict("Slot became unavailable.");
-
-        foreach (var a in fresh)
+        var appt = new Appointment
         {
-            a.Status = AppointmentStatus.Booked;
-            a.ServiceId = req.ServiceId;
-            a.Notes = BuildNotes(new BookingRequest
-            {
-                FullName = req.FullName,
-                Email = req.Email,
-                Phone = req.Phone
-            });
-        }
+            StaffId = req.StaffId,
+            ServiceId = req.ServiceId,
+            Start = startDt,
+            End = endDt,
+            Status = AppointmentStatus.Booked,
+            Notes = null,
+            ClientId = client.Id
+        };
 
+        _db.Appointments.Add(appt);
         await _db.SaveChangesAsync();
-        await tx.CommitAsync();
 
-        return Ok(new { ok = true });
+        return Ok(new { id = appt.Id, start = appt.Start, end = appt.End });
     }
 
-
-    // ------------ Helpers ------------
-    private static string? BuildNotes(BookingRequest r)
+    // dijagnostika
+    [HttpGet("staff/diag")]
+    [AllowAnonymous]
+    public IActionResult StaffDiag()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(r.FullName)) parts.Add(r.FullName!.Trim());
-        if (!string.IsNullOrWhiteSpace(r.Email)) parts.Add(r.Email!.Trim());
-        if (!string.IsNullOrWhiteSpace(r.Phone)) parts.Add(r.Phone!.Trim());
-        if (!string.IsNullOrWhiteSpace(r.Notes)) parts.Add(r.Notes!.Trim());
-        return parts.Count > 0 ? $"Online: {string.Join(" / ", parts)}" : "Online rezervacija";
+        var cn = _db.Database.GetDbConnection();
+        return Ok(new
+        {
+            server = cn.DataSource,
+            database = cn.Database,
+            staffCount = _db.Staff.Count(),
+            servicesCount = _db.Services.Count(),
+            appointmentsCount = _db.Appointments.Count()
+        });
     }
 }

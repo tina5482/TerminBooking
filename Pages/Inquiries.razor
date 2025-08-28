@@ -1,0 +1,189 @@
+﻿@page "/inquiries"
+@using Microsoft.EntityFrameworkCore
+@using TerminBooking.Domain
+@inject TerminBooking.Data.ApplicationDbContext Db
+
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<h3>Upiti s kontakt forme</h3>
+
+<div class="row g-3 align-items-end">
+    <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select class="form-select" @bind="filterStatus">
+            <option value="">(svi)</option>
+            <option value="@ContactStatus.New">Novi</option>
+            <option value="@ContactStatus.Replied">Odgovoreno</option>
+            <option value="@ContactStatus.Closed">Zatvoreno</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Pretraga</label>
+        <input class="form-control" @bind="search" placeholder="Ime / email / telefon / sadrži..." />
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-primary w-100" @onclick="LoadAsync">Osvježi</button>
+    </div>
+</div>
+
+@if (loading)
+{
+    <p class="text-muted mt-3">Učitavam...</p>
+}
+else if (items.Count == 0)
+{
+    <div class="alert alert-info mt-3">Nema rezultata.</div>
+}
+else
+{
+    <div class="table-responsive mt-3">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Vrijeme</th>
+                    <th>Ime</th>
+                    <th>Email</th>
+                    <th>Telefon</th>
+                    <th>Naslov</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in items)
+                {
+                    <tr class="@RowClass(m)">
+                        <td>@m.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</td>
+                        <td>@m.FullName</td>
+                        <td>@m.Email</td>
+                        <td>@m.Phone</td>
+                        <td>@m.Subject</td>
+                        <td>@m.Status</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Select(m)">Otvori</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (selected is not null)
+{
+    <hr />
+    <h5>Detalji</h5>
+    <div class="row g-3">
+        <div class="col-md-3"><strong>Ime:</strong> @selected.FullName</div>
+        <div class="col-md-3"><strong>Email:</strong> @selected.Email</div>
+        <div class="col-md-3"><strong>Telefon:</strong> @selected.Phone</div>
+        <div class="col-md-3"><strong>Vrijeme:</strong> @selected.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</div>
+    </div>
+    <div class="mt-2"><strong>Naslov:</strong> @selected.Subject</div>
+    <div class="mt-2">
+        <strong>Poruka:</strong>
+        <pre class="mt-1" style="white-space:pre-wrap">@selected.Body</pre>
+    </div>
+
+    <div class="mt-3">
+        <label class="form-label">Interna bilješka</label>
+        <textarea class="form-control" rows="3" @bind="selected.InternalNotes"></textarea>
+    </div>
+
+    <div class="mt-3 d-flex gap-2 flex-wrap">
+        @if (!string.IsNullOrWhiteSpace(selected.Email))
+        {
+            <a class="btn btn-primary"
+               href="@BuildGmailCompose(selected.Email, $"Re: {selected.Subject}", BuildReplyBody(selected))"
+               target="_blank" rel="noopener">
+                Odgovori u Gmailu
+            </a>
+        }
+        <button class="btn btn-success" @onclick="() => UpdateStatus(ContactStatus.Replied)">Označi kao odgovoreno</button>
+        <button class="btn btn-link" @onclick="() => { selected = null; }">Zatvori detalje</button>
+    </div>
+}
+
+@code {
+    private bool loading = true;
+    private List<ContactMessage> items = new();
+    private ContactMessage? selected;
+
+    private string? search;
+    private ContactStatus? filterStatus;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        StateHasChanged();
+
+        var q = Db.ContactMessages.AsQueryable();
+
+        if (filterStatus.HasValue)
+            q = q.Where(x => x.Status == filterStatus.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(x =>
+                x.FullName.Contains(s) ||
+                (x.Email != null && x.Email.Contains(s)) ||
+                (x.Phone != null && x.Phone.Contains(s)) ||
+                (x.Subject != null && x.Subject.Contains(s)) ||
+                x.Body.Contains(s)
+            );
+        }
+
+        items = await q
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(500)
+            .ToListAsync();
+
+        loading = false;
+    }
+
+    private void Select(ContactMessage m) => selected = m;
+
+    private async Task UpdateStatus(ContactStatus st)
+    {
+        if (selected is null) return;
+        selected.Status = st;
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private static string RowClass(ContactMessage m)
+        => m.Status == ContactStatus.New ? "table-warning"
+         : m.Status == ContactStatus.Replied ? "table-success"
+         : "";
+
+    // Gmail "compose" prozor u novoj kartici
+    private static string BuildGmailCompose(string to, string? subject = null, string? body = null)
+    {
+        var baseUrl = "https://mail.google.com/mail/";
+        var query = new List<string> { "view=cm", "fs=1" };
+        if (!string.IsNullOrWhiteSpace(to)) query.Add($"to={Uri.EscapeDataString(to)}");
+        if (!string.IsNullOrWhiteSpace(subject)) query.Add($"su={Uri.EscapeDataString(subject)}");
+        if (!string.IsNullOrWhiteSpace(body)) query.Add($"body={Uri.EscapeDataString(body)}");
+        return baseUrl + "?" + string.Join("&", query);
+    }
+
+    private static string BuildReplyBody(ContactMessage m)
+    {
+        var when = m.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm");
+        var quoted = (m.Body ?? "").Replace("\r", "").Replace("\n", "\n> ");
+        return $@"Poštovani/na {m.FullName},
+
+Hvala na poruci.
+
+---
+
+Originalna poruka ({when}):
+> {quoted}
+
+Lijep pozdrav,
+";
+    }
+}

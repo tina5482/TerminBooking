@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TerminBooking.Areas.Identity;
 using TerminBooking.Data;
-using TerminBooking.Domain; // Staff/Service/Appointment modeli
 
 namespace TerminBooking
 {
@@ -17,15 +16,25 @@ namespace TerminBooking
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-            builder.Services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlServer(connectionString));
+            // 1) Standardni DbContext za Identity i klasièan DI,
+            //    ali s optionsLifetime = Singleton (bitno zbog DbContextFactory)
+            builder.Services.AddDbContext<ApplicationDbContext>(
+                options => options.UseSqlServer(connectionString),
+                contextLifetime: ServiceLifetime.Scoped,
+                optionsLifetime: ServiceLifetime.Singleton
+            );
+
+            // 2) Tvornica konteksta za Blazor komponente (sprjeèava concurrency probleme)
+            builder.Services.AddDbContextFactory<ApplicationDbContext>(
+                options => options.UseSqlServer(connectionString)
+            );
 
             builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
             // ===== Identity =====
             builder.Services.AddDefaultIdentity<IdentityUser>(options =>
             {
-                options.SignIn.RequireConfirmedAccount = false; // lakši login u razvoju
+                options.SignIn.RequireConfirmedAccount = false;
             })
             .AddEntityFrameworkStores<ApplicationDbContext>();
 
@@ -35,49 +44,30 @@ namespace TerminBooking
             builder.Services.AddControllers();
             builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingIdentityAuthenticationStateProvider<IdentityUser>>();
 
-            // ===== CORS (frontend na drugom originu) =====
+            // ===== CORS =====
             const string CorsPolicy = "PublicSite";
+            const string DevOpenCors = "DevOpen";
+
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy(CorsPolicy, policy =>
-                {
-                    policy
-                        .WithOrigins(
-                            "http://127.0.0.1:5500",
-                            "http://localhost:5500"
-                        )
-                        .AllowAnyHeader()
-                        .AllowAnyMethod();
-                });
+                options.AddPolicy(CorsPolicy, p =>
+                    p.WithOrigins(
+                         "http://127.0.0.1:5500",
+                         "http://localhost:5500",
+                         "https://127.0.0.1:5500",
+                         "https://localhost:5500"
+                     )
+                     .AllowAnyHeader()
+                     .AllowAnyMethod()
+                );
+
+                options.AddPolicy(DevOpenCors, p =>
+                    p.AllowAnyOrigin()
+                     .AllowAnyHeader()
+                     .AllowAnyMethod());
             });
 
             var app = builder.Build();
-
-            // ===== SEED: Staff + Services (samo ako nema) =====
-            using (var scope = app.Services.CreateScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                db.Database.Migrate(); // primijeni migracije
-
-                if (!db.Staff.Any())
-                {
-                    var bella = new Staff { Name = "Bella", Skills = "Šminkanje, Obrve, Trepavice", IsActive = true, ColorHex = "#e91e63" };
-                    var petra = new Staff { Name = "Petra", Skills = "Nokti", IsActive = true, ColorHex = "#3f51b5" };
-
-                    db.Staff.AddRange(bella, petra);
-                    db.SaveChanges(); // da dobiju Id
-
-                    db.Services.AddRange(
-                        new Service { Name = "Šminkanje", DurationMin = 60, Price = 40, StaffId = bella.Id, IsActive = true },
-                        new Service { Name = "Obrve", DurationMin = 30, Price = 20, StaffId = bella.Id, IsActive = true },
-                        new Service { Name = "Trepavice", DurationMin = 45, Price = 30, StaffId = bella.Id, IsActive = true },
-
-                        new Service { Name = "Manikura", DurationMin = 60, Price = 35, StaffId = petra.Id, IsActive = true },
-                        new Service { Name = "Gel nokti", DurationMin = 90, Price = 50, StaffId = petra.Id, IsActive = true }
-                    );
-                    db.SaveChanges();
-                }
-            }
 
             // ===== Pipeline =====
             if (app.Environment.IsDevelopment())
@@ -94,13 +84,17 @@ namespace TerminBooking
             app.UseStaticFiles();
 
             app.UseRouting();
-            app.UseCors(CorsPolicy);
+
+            if (app.Environment.IsDevelopment())
+                app.UseCors(DevOpenCors);
+            else
+                app.UseCors(CorsPolicy);
 
             app.UseAuthentication();
             app.UseAuthorization();
 
-            app.MapRazorPages();   // Identity UI
-            app.MapControllers();  // API (BookingController)
+            app.MapRazorPages();
+            app.MapControllers();   // /api/*
             app.MapBlazorHub();
             app.MapFallbackToPage("/_Host");
 

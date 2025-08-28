@@ -33,7 +33,8 @@
 else
 {
     <div class="d-flex justify-content-between align-items-center mb-2">
-        <h5>Bookirani termini — @CurrentStaffName — @SelectedDate.ToString("yyyy-MM-dd") (@booked.Count)</h5>
+        <h5>Bookirani termini — @CurrentStaffName — @SelectedDate.ToString("dd.MM.yyyy.") (@booked.Count)</h5>
+
         <button class="btn btn-primary" @onclick="() => showAddBlock = true">Dodaj blok (Booked)</button>
     </div>
 
@@ -44,6 +45,8 @@ else
                 <th>Kraj</th>
                 <th>Usluga</th>
                 <th>Klijent</th>
+                <th>Email</th>
+                <th>Mobitel</th>
                 <th>Napomena</th>
                 <th></th>
             </tr>
@@ -51,7 +54,7 @@ else
         <tbody>
             @if (booked.Count == 0)
             {
-                <tr><td colspan="6" class="text-muted">Nema bookiranih termina za ovaj dan.</td></tr>
+                <tr><td colspan="8" class="text-muted">Nema bookiranih termina za ovaj dan.</td></tr>
             }
             else
             {
@@ -62,6 +65,8 @@ else
                         <td>@a.End.ToString("HH:mm")</td>
                         <td>@a.Service?.Name</td>
                         <td>@a.Client?.FullName</td>
+                        <td>@a.Client?.Email</td>
+                        <td>@a.Client?.Phone</td>
                         <td>@a.Notes</td>
                         <td>
                             <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteBookingAsync(a.Id)">Obriši</button>
@@ -71,6 +76,7 @@ else
             }
         </tbody>
     </table>
+
 }
 
 <!-- Modal: Dodaj blok (Booked) -->
@@ -83,6 +89,7 @@ else
                     <h5 class="modal-title">Dodaj blok (Booked)</h5>
                     <button type="button" class="btn-close" @onclick="CloseAddBlock"></button>
                 </div>
+
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label">Usluga</label>
@@ -96,25 +103,62 @@ else
                             }
                         </select>
                     </div>
+
+                    @* NOVO: biramo samo početak iz slobodnih, kraj se računa *@
                     <div class="row g-2">
-                        <div class="col">
+                        <div class="col-12">
                             <label class="form-label">Početak</label>
-                            <input type="time" class="form-control" value="@add_StartTime" @onchange="OnStartTimeChanged" />
-                        </div>
-                        <div class="col">
-                            <label class="form-label">Kraj</label>
-                            <input type="time" class="form-control" value="@add_EndTime" @onchange="OnEndTimeChanged" />
+                            <select class="form-select" @onchange="OnStartTimeChangedFromSelect">
+                                @if (availableStarts.Count == 0)
+                                {
+                                    <option value="">-- Nema slobodnih termina --</option>
+                                }
+                                else
+                                {
+                                    @foreach (var t in availableStarts)
+                                    {
+                                        <option value="@t" selected="@(t == add_StartTime)">@t</option>
+                                    }
+                                }
+                            </select>
+                            <div class="form-text">
+                                @if (!string.IsNullOrEmpty(add_StartTime))
+                                {
+                                    <span>Kraj: @ComputedEndPreview</span>
+                                }
+                            </div>
                         </div>
                     </div>
+
                     <div class="mt-2">
                         <label class="form-label">Napomena (opcionalno)</label>
                         <input class="form-control" value="@add_Notes" @onchange="OnNotesChanged" />
                     </div>
+
+                    <hr />
+
+                    <h6>Podaci o klijentu</h6>
+                    <div class="mb-2">
+                        <label class="form-label">Ime i prezime *</label>
+                        <input class="form-control" value="@add_ClientFullName" @onchange="OnClientNameChanged" placeholder="Ime i prezime" />
+                    </div>
+                    <div class="row g-2">
+                        <div class="col">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" value="@add_ClientEmail" @onchange="OnClientEmailChanged" placeholder="ime@email.com" />
+                        </div>
+                        <div class="col">
+                            <label class="form-label">Mobitel</label>
+                            <input type="tel" class="form-control" value="@add_ClientPhone" @onchange="OnClientPhoneChanged" placeholder="091 234 5678" />
+                        </div>
+                    </div>
+
                     @if (!string.IsNullOrEmpty(error))
                     {
-                        <div class="alert alert-danger mt-2">@error</div>
+                        <div class="alert alert-danger mt-3">@error</div>
                     }
                 </div>
+
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CloseAddBlock">Odustani</button>
                     <button class="btn btn-primary" @onclick="SaveAddBlockAsync" disabled="@isSaving">Spremi</button>
@@ -149,14 +193,28 @@ else
     private List<Appointment> booked = new();
     private List<Service> servicesForStaff = new();
 
-    // modal state — SVE string/broj (NEMA TimeOnly?)
+    // modal state
     private bool showAddBlock = false;
+
+    // sada biramo samo početak; kraj se računa automatski
     private string add_StartTime = "09:00"; // "HH:mm"
-    private string add_EndTime = "10:00"; // "HH:mm"
+    private string add_EndTime = "10:00";   // stoji radi kompatibilnosti, ali računamo ga iz usluge
+
+    private List<string> availableStarts = new(); // NOVO: slobodni početci za odabrani dan/uslugu
+
     private int? add_ServiceId;
     private string? add_Notes;
     private string? error;
     private bool isSaving = false;
+
+    // klijent u modalu
+    private string? add_ClientFullName;
+    private string? add_ClientEmail;
+    private string? add_ClientPhone;
+
+    private void OnClientNameChanged(ChangeEventArgs e) => add_ClientFullName = e?.Value?.ToString();
+    private void OnClientEmailChanged(ChangeEventArgs e) => add_ClientEmail = e?.Value?.ToString();
+    private void OnClientPhoneChanged(ChangeEventArgs e) => add_ClientPhone = e?.Value?.ToString();
 
     // ===== Lifecycle =====
     protected override async Task OnInitializedAsync()
@@ -182,22 +240,32 @@ else
     private void OnServiceChanged(ChangeEventArgs e)
     {
         add_ServiceId = int.TryParse(e?.Value?.ToString(), out var id) ? id : (int?)null;
+        // osvježi listu slobodnih početaka i izračun kraja
+        RebuildAvailableStarts();
+        AutoComputeEnd();
+        StateHasChanged();
     }
 
+    // staro polje za vrijeme početka – sada iz <select>, ali ostavljamo handler
     private void OnStartTimeChanged(ChangeEventArgs e)
     {
         add_StartTime = e?.Value?.ToString() ?? add_StartTime;
+        AutoComputeEnd();
     }
 
-    private void OnEndTimeChanged(ChangeEventArgs e)
+    // NOVO: handler baš za <select> početka
+    private void OnStartTimeChangedFromSelect(ChangeEventArgs e)
     {
-        add_EndTime = e?.Value?.ToString() ?? add_EndTime;
+        add_StartTime = e?.Value?.ToString() ?? add_StartTime;
+        AutoComputeEnd();
     }
+
+    // end više ne unosimo ručno, ali ostavljam funkciju radi kompatibilnosti
+    private void OnEndTimeChanged(ChangeEventArgs e)
+        => add_EndTime = e?.Value?.ToString() ?? add_EndTime;
 
     private void OnNotesChanged(ChangeEventArgs e)
-    {
-        add_Notes = e?.Value?.ToString();
-    }
+        => add_Notes = e?.Value?.ToString();
 
     // ===== Data load =====
     private async Task LoadDayAsync()
@@ -208,6 +276,7 @@ else
 
         if (!SelectedStaffId.HasValue)
         {
+            availableStarts.Clear();
             StateHasChanged();
             return;
         }
@@ -229,7 +298,73 @@ else
             .OrderBy(s => s.Name)
             .ToListAsync();
 
+        // nakon svakog reloada za dan/djelatnika – rebuild slobodnih početaka
+        RebuildAvailableStarts();
+
         StateHasChanged();
+    }
+
+    // ===== Helpers za izračun slobodnih početaka i kraja =====
+
+    private void RebuildAvailableStarts()
+    {
+        availableStarts.Clear();
+
+        if (!SelectedStaffId.HasValue) return;
+        if (!add_ServiceId.HasValue) return;
+
+        var svc = servicesForStaff.FirstOrDefault(x => x.Id == add_ServiceId.Value);
+        if (svc == null) return;
+
+        // Radno vrijeme – po potrebi prilagodi
+        var workStart = new DateTime(SelectedDate.Year, SelectedDate.Month, SelectedDate.Day, 9, 0, 0);
+        var workEnd = new DateTime(SelectedDate.Year, SelectedDate.Month, SelectedDate.Day, 17, 0, 0);
+
+        // kandidati svakih 30 min
+        const int stepMin = 30;
+        for (var t = workStart; t <= workEnd.AddMinutes(-svc.DurationMin); t = t.AddMinutes(stepMin))
+        {
+            var candStart = t;
+            var candEnd = t.AddMinutes(svc.DurationMin);
+
+            bool overlaps = booked.Any(a => a.Start < candEnd && candStart < a.End);
+            if (!overlaps)
+                availableStarts.Add(candStart.ToString("HH:mm"));
+        }
+
+        // uskladi trenutno odabrani početak
+        if (availableStarts.Count == 0)
+        {
+            add_StartTime = "";
+            add_EndTime = "";
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(add_StartTime) || !availableStarts.Contains(add_StartTime))
+                add_StartTime = availableStarts[0];
+
+            AutoComputeEnd();
+        }
+    }
+
+    private void AutoComputeEnd()
+    {
+        if (!add_ServiceId.HasValue) { add_EndTime = ""; return; }
+        var svc = servicesForStaff.FirstOrDefault(x => x.Id == add_ServiceId.Value);
+        if (svc == null) { add_EndTime = ""; return; }
+
+        if (!TimeOnly.TryParse(add_StartTime, out var tStart)) { add_EndTime = ""; return; }
+
+        add_EndTime = tStart.AddMinutes(svc.DurationMin).ToString("HH:mm");
+    }
+
+    private string ComputedEndPreview
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(add_EndTime)) return "--:--";
+            return add_EndTime;
+        }
     }
 
     // ===== Modal helpers =====
@@ -256,19 +391,31 @@ else
             return;
         }
 
-        if (!TimeOnly.TryParse(add_StartTime, out var tStart) ||
-            !TimeOnly.TryParse(add_EndTime, out var tEnd))
+        if (string.IsNullOrWhiteSpace(add_StartTime))
         {
-            error = "Neispravno vrijeme (format HH:mm).";
+            error = "Nema odabranog početka.";
+            return;
+        }
+
+        if (!TimeOnly.TryParse(add_StartTime, out var tStart))
+        {
+            error = "Neispravno vrijeme početka.";
+            return;
+        }
+
+        var svc = servicesForStaff.FirstOrDefault(x => x.Id == add_ServiceId.Value);
+        if (svc == null)
+        {
+            error = "Usluga nije pronađena.";
             return;
         }
 
         var start = DateOnly.FromDateTime(SelectedDate).ToDateTime(tStart);
-        var end = DateOnly.FromDateTime(SelectedDate).ToDateTime(tEnd);
+        var end = start.AddMinutes(svc.DurationMin);
 
-        if (end <= start)
+        if (string.IsNullOrWhiteSpace(add_ClientFullName))
         {
-            error = "Kraj mora biti nakon početka.";
+            error = "Unesi ime i prezime klijenta.";
             return;
         }
 
@@ -286,6 +433,34 @@ else
 
         isSaving = true;
 
+        // Upsert klijenta (preko emaila/telefona)
+        Client? client = null;
+        var email = string.IsNullOrWhiteSpace(add_ClientEmail) ? null : add_ClientEmail.Trim();
+        var phone = string.IsNullOrWhiteSpace(add_ClientPhone) ? null : add_ClientPhone.Trim();
+        var name = add_ClientFullName!.Trim();
+
+        if (!string.IsNullOrWhiteSpace(email))
+            client = await Db.Clients.FirstOrDefaultAsync(c => c.Email == email);
+        if (client is null && !string.IsNullOrWhiteSpace(phone))
+            client = await Db.Clients.FirstOrDefaultAsync(c => c.Phone == phone);
+        if (client is null)
+            client = await Db.Clients.FirstOrDefaultAsync(c => c.FullName == name && c.Email == email && c.Phone == phone);
+
+        if (client is null)
+        {
+            client = new Client { FullName = name, Email = email, Phone = phone };
+            Db.Clients.Add(client);
+            await Db.SaveChangesAsync(); // treba nam ClientId
+        }
+        else
+        {
+            // dopuni prazna polja
+            if (string.IsNullOrWhiteSpace(client.FullName)) client.FullName = name;
+            if (string.IsNullOrWhiteSpace(client.Email) && email is not null) client.Email = email;
+            if (string.IsNullOrWhiteSpace(client.Phone) && phone is not null) client.Phone = phone;
+            await Db.SaveChangesAsync();
+        }
+
         var appt = new Appointment
             {
                 StaffId = SelectedStaffId.Value,
@@ -293,7 +468,8 @@ else
                 Start = start,
                 End = end,
                 Status = AppointmentStatus.Booked,
-                Notes = add_Notes
+                Notes = add_Notes,
+                ClientId = client.Id
             };
 
         Db.Appointments.Add(appt);

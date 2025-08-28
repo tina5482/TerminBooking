@@ -16,6 +16,8 @@ namespace TerminBooking.Data
         public DbSet<Client> Clients => Set<Client>();
         public DbSet<Appointment> Appointments => Set<Appointment>();
         public DbSet<Staff> Staff => Set<Staff>();
+        public DbSet<ContactMessage> ContactMessages => Set<ContactMessage>();
+
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -107,6 +109,21 @@ namespace TerminBooking.Data
                 e.Property(x => x.Notes)
                     .HasMaxLength(1000);
             });
+
+            b.Entity<ContactMessage>(e =>
+            {
+                e.Property(x => x.FullName).IsRequired().HasMaxLength(150);
+                e.Property(x => x.Email).HasMaxLength(256);
+                e.Property(x => x.Phone).HasMaxLength(50);
+                e.Property(x => x.Subject).HasMaxLength(200);
+                e.Property(x => x.Body).IsRequired().HasMaxLength(4000);
+                e.Property(x => x.InternalNotes).HasMaxLength(2000);
+                e.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                e.Property(x => x.Status).HasDefaultValue(ContactStatus.New);
+                e.HasIndex(x => x.Status);
+                e.HasIndex(x => x.CreatedAt);
+            });
+
         }
     }
 }
