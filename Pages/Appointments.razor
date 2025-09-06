@@ -1,4 +1,5 @@
 ﻿@page "/appointments"
+@using System.Timers
 @using TerminBooking.Data
 @using TerminBooking.Domain
 @using Microsoft.EntityFrameworkCore
@@ -7,6 +8,7 @@
 @inject DialogService DialogService
 
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@implements IDisposable
 
 <h3>Upravljanje terminima</h3>
 
@@ -129,7 +131,7 @@ else
 
     private List<string> availableStarts = new();
 
-    // --- Usluga: rebuilda slotove i briše odabir početka/kraja (bez auto-selecta) ---
+    // --- Usluga ---
     private int? _add_ServiceId;
     private int? add_ServiceId
     {
@@ -137,9 +139,9 @@ else
         set
         {
             _add_ServiceId = value;
-            RebuildAvailableStarts(); // popuni listu
-            add_StartTime = "";       // očisti početak
-            add_EndTime = "";         // očisti kraj (računa se nakon odabira početka)
+            RebuildAvailableStarts();
+            add_StartTime = "";
+            add_EndTime = "";
             StateHasChanged();
         }
     }
@@ -157,32 +159,59 @@ else
     private void OnClientEmailChanged(ChangeEventArgs e) => add_ClientEmail = e?.Value?.ToString();
     private void OnClientPhoneChanged(ChangeEventArgs e) => add_ClientPhone = e?.Value?.ToString();
 
-    // ===== Reset forme =====
-    void ResetAddBlockForm()
-    {
-        _add_ServiceId = null;
-        availableStarts.Clear();
+    // ===== Auto-refresh timer (.NET) =====
+    private System.Timers.Timer? _refreshTimer;
+    private bool _autoRefreshing = false;
 
-        _add_StartTime = "";
-        add_EndTime = "";
-
-        add_Notes = null;
-        add_ClientFullName = null;
-        add_ClientEmail = null;
-        add_ClientPhone = null;
-
-        error = null;
-        isSaving = false;
-    }
-
-    // ===== Lifecycle =====
     protected override async Task OnInitializedAsync()
     {
-        staffList = await Db.Staff.Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync();
+        // svježi upiti
+        staffList = await Db.Staff.AsNoTracking()
+                     .Where(x => x.IsActive)
+                     .OrderBy(x => x.Name)
+                     .ToListAsync();
+
         if (staffList.Any())
             SelectedStaffId = staffList.First().Id;
 
+        StartAutoRefresh(); // pokreni timer
         await LoadDayAsync();
+    }
+
+    private void StartAutoRefresh()
+    {
+        _refreshTimer = new System.Timers.Timer(5000); // 5s
+        _refreshTimer.AutoReset = true;
+        _refreshTimer.Elapsed += OnRefreshTimerElapsed;
+        _refreshTimer.Start();
+    }
+
+    private async void OnRefreshTimerElapsed(object? sender, ElapsedEventArgs e)
+    {
+        // Timer radi na pozadinskom threadu -> sve UI akcije kroz InvokeAsync
+        await InvokeAsync(async () =>
+    {
+        if (_autoRefreshing || !SelectedStaffId.HasValue) return;
+        _autoRefreshing = true;
+        try
+        {
+            await LoadDayAsync();
+        }
+        finally
+        {
+            _autoRefreshing = false;
+        }
+    });
+    }
+
+    public void Dispose()
+    {
+        if (_refreshTimer is not null)
+        {
+            _refreshTimer.Elapsed -= OnRefreshTimerElapsed;
+            _refreshTimer.Stop();
+            _refreshTimer.Dispose();
+        }
     }
 
     // ===== UI handlers =====
@@ -229,7 +258,7 @@ else
         var dayStart = new DateTime(SelectedDate.Year, SelectedDate.Month, SelectedDate.Day, 0, 0, 0);
         var dayEnd = dayStart.AddDays(1);
 
-        booked = await Db.Appointments
+        booked = await Db.Appointments.AsNoTracking()
         .Include(a => a.Service)
         .Include(a => a.Client)
         .Where(a => a.StaffId == SelectedStaffId.Value &&
@@ -238,7 +267,7 @@ else
         .OrderBy(a => a.Start)
         .ToListAsync();
 
-        servicesForStaff = await Db.Services
+        servicesForStaff = await Db.Services.AsNoTracking()
         .Where(s => s.StaffId == SelectedStaffId.Value && s.IsActive)
         .OrderBy(s => s.Name)
         .ToListAsync();
@@ -296,7 +325,6 @@ else
         if (!servicesForStaff.Any())
             await LoadDayAsync();
 
-        // možeš preselectati uslugu (po želji), početak ostaje prazan dok ga user ne odabere
         if (servicesForStaff.Any())
             add_ServiceId = servicesForStaff.First().Id;
 
@@ -444,7 +472,8 @@ else
 
         ResetAddBlockForm();
         DialogService.Close();
-        await LoadDayAsync();
+
+        await LoadDayAsync(); // odmah osvježi grid
     }
 
     private async Task DeleteBookingAsync(int id)
@@ -467,5 +496,23 @@ else
         {
             args.Attributes["style"] = "white-space: normal; vertical-align: top; word-break: break-word;";
         }
+    }
+
+    // ===== Reset forme =====
+    void ResetAddBlockForm()
+    {
+        _add_ServiceId = null;
+        availableStarts.Clear();
+
+        _add_StartTime = "";
+        add_EndTime = "";
+
+        add_Notes = null;
+        add_ClientFullName = null;
+        add_ClientEmail = null;
+        add_ClientPhone = null;
+
+        error = null;
+        isSaving = false;
     }
 }

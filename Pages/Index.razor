@@ -13,7 +13,7 @@
     <RadzenButton Icon="refresh" Text="Osvježi" ButtonStyle="ButtonStyle.Light"
                   Click="LoadToday" Disabled="@_isLoading" />
     <span class="text-muted small align-self-center">
-        Auto-osvježavanje svakih 15 s.
+        Auto-osvježavanje svakih 10 s.
     </span>
 </div>
 
@@ -72,9 +72,9 @@ else
     {
         await LoadToday();
 
-        // auto-refresh svakih 15 s
+        // auto-refresh svakih 10 s
         _cts = new CancellationTokenSource();
-        _timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(15));
+        _timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(10));
         _ = AutoRefreshAsync();
     }
 
