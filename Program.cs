@@ -1,3 +1,4 @@
+using Radzen; // <= DODANO
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,9 @@ namespace TerminBooking
             builder.Services.AddServerSideBlazor();
             builder.Services.AddControllers();
             builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingIdentityAuthenticationStateProvider<IdentityUser>>();
+
+            // ===== Radzen =====
+            builder.Services.AddRadzenComponents(); // <= DODANO
 
             // ===== CORS =====
             const string CorsPolicy = "PublicSite";

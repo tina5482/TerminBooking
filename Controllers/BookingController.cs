@@ -14,6 +14,12 @@ public class BookingController : ControllerBase
     private readonly ApplicationDbContext _db;
     public BookingController(ApplicationDbContext db) => _db = db;
 
+    // ===== Konstante / postavke =====
+    private const int LeadTimeMinutes = 30;      // minimalno koliko unaprijed se smije rezervirati
+    private static readonly TimeOnly WorkStart = new(9, 0);
+    private static readonly TimeOnly WorkEnd = new(17, 0);
+    private const int SlotMinutes = 30;
+
     // ------------ DTOs ------------
     public class BookingRequest
     {
@@ -68,15 +74,22 @@ public class BookingController : ControllerBase
         if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d))
             return BadRequest("Invalid date format. Use yyyy-MM-dd.");
 
-        // vikend -> nema termina
+        // Vikend -> nema termina
         var dayOfWeek = d.ToDateTime(TimeOnly.MinValue).DayOfWeek;
         if (dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
             return Ok(Array.Empty<object>());
 
-        // radno vrijeme 09–17, 30 min korak
-        var workStart = d.ToDateTime(new TimeOnly(9, 0));
-        var workEnd = d.ToDateTime(new TimeOnly(17, 0));
+        var now = DateTime.Now;
 
+        // Prošli dan -> nema slotova
+        if (d.ToDateTime(TimeOnly.MinValue).Date < now.Date)
+            return Ok(Array.Empty<object>());
+
+        // Radno vrijeme 09–17, 30-min korak
+        var workStart = d.ToDateTime(WorkStart);
+        var workEnd = d.ToDateTime(WorkEnd);
+
+        // Učitavanje bookiranih u okviru dana (radi kolizija)
         var dayStart = d.ToDateTime(TimeOnly.MinValue);
         var dayEnd = d.ToDateTime(new TimeOnly(23, 59, 59));
 
@@ -90,10 +103,21 @@ public class BookingController : ControllerBase
         static bool Overlaps(DateTime s1, DateTime e1, DateTime s2, DateTime e2)
             => s1 < e2 && s2 < e1;
 
+        // Minimalni dopušteni start: danas je now + lead, ostalim danima nema reza
+        DateTime minAllowedStart =
+            d.ToDateTime(TimeOnly.MinValue).Date == now.Date
+            ? now.AddMinutes(LeadTimeMinutes)
+            : DateTime.MinValue;
+
         var freeBlocks = new List<object>();
-        for (var cur = workStart; cur < workEnd; cur = cur.AddMinutes(30))
+        for (var cur = workStart; cur < workEnd; cur = cur.AddMinutes(SlotMinutes))
         {
-            var nxt = cur.AddMinutes(30);
+            var nxt = cur.AddMinutes(SlotMinutes);
+
+            // odbaci prošlost / lead-time za današnji datum
+            if (cur < minAllowedStart) continue;
+
+            // odbaci ako se preklapa s bookiranim
             var overlaps = booked.Any(b => Overlaps(cur, nxt, b.Start, b.End));
             if (!overlaps)
             {
@@ -124,15 +148,20 @@ public class BookingController : ControllerBase
         var startDt = d.ToDateTime(t);
         var endDt = startDt.AddMinutes(service.DurationMin);
 
-        // provjera preklapanja
+        // Lead-time zaštita: zabrani prošlost i < 30 min unaprijed
+        var now = DateTime.Now;
+        if (startDt < now.AddMinutes(LeadTimeMinutes))
+            return BadRequest("Preblizu je početku ili u prošlosti.");
+
+        // Provjera preklapanja
         var overlaps = await _db.Appointments.AnyAsync(a =>
             a.StaffId == req.StaffId &&
             a.Status == AppointmentStatus.Booked &&
             a.Start < endDt && startDt < a.End);
 
-        if (overlaps) return Conflict("Slot just became unavailable.");
+        if (overlaps) return Conflict("Slot je upravo zauzet.");
 
-        // upsert klijenta (po emailu, zatim phone, zatim kombinacija)
+        // Upsert klijenta
         Client? client = null;
         var email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
         var phone = string.IsNullOrWhiteSpace(req.Phone) ? null : req.Phone.Trim();
@@ -149,6 +178,14 @@ public class BookingController : ControllerBase
         {
             client = new Client { FullName = name ?? "", Email = email, Phone = phone };
             _db.Clients.Add(client);
+            await _db.SaveChangesAsync();
+        }
+        else
+        {
+            // dopuni prazna polja, ako treba
+            if (string.IsNullOrWhiteSpace(client.FullName) && !string.IsNullOrWhiteSpace(name)) client.FullName = name!;
+            if (string.IsNullOrWhiteSpace(client.Email) && !string.IsNullOrWhiteSpace(email)) client.Email = email!;
+            if (string.IsNullOrWhiteSpace(client.Phone) && !string.IsNullOrWhiteSpace(phone)) client.Phone = phone!;
             await _db.SaveChangesAsync();
         }
 

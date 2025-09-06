@@ -1,0 +1,389 @@
+﻿/* ==========================================================================
+   Rose UI — kompletna tema (sidebar smeđi, navbar, gumbi, “glass” paneli)
+   + CLASSIC dropdown (“box u boxu”) bez plavih obruba i bez trajnog fill-a
+   ========================================================================== */
+
+/* ------------------------------- Paleta ---------------------------------- */
+:root {
+    /* global rose */
+    --rose-bg: #F5EFEA;
+    --rose-surface: #FFFDFC;
+    --rose-primary: #D9A28F;
+    --rose-primary-600: #C98773;
+    --rose-border: #E7DAD1;
+    --rose-text: #3E2F2A;
+    --rose-muted: #6F625C;
+    /* layout nijanse */
+    --rose-body-bg: #EDE2DC;
+    --rose-nav-bg: rgba(203,170,156,.86);
+    --rose-sidebar-solid: #B18878;
+    --rose-sidebar-hover: #EDE4DF;
+    --rose-sidebar-text: #2D2623;
+    /* ujednačena visina kontrola (COMPACT) */
+    --rose-control-h: 38px;
+}
+
+/* --------------------------- Misty pozadina ------------------------------- */
+body.rose {
+    background: radial-gradient(900px 650px at 95% 0%, #E9CFC6 0%, rgba(233,207,198,0) 55%), radial-gradient(900px 700px at 100% 100%, #F3E3DC 0%, rgba(243,227,220,0) 55%), var(--rose-body-bg);
+    color: var(--rose-text);
+}
+
+    /* ------------------------------- Navbar ---------------------------------- */
+    body.rose .top-row,
+    body.rose .navbar,
+    body.rose header {
+        background: var(--rose-nav-bg) !important;
+        color: var(--rose-text);
+        border-bottom: 1px solid var(--rose-border);
+        backdrop-filter: blur(8px) saturate(115%);
+        -webkit-backdrop-filter: blur(8px) saturate(115%);
+        box-shadow: none !important;
+    }
+
+        body.rose .top-row a,
+        body.rose .navbar a {
+            color: var(--rose-text) !important;
+        }
+
+            body.rose .top-row a:hover,
+            body.rose .navbar a:hover {
+                opacity: .85;
+            }
+
+    /* ------------------------------- Sidebar --------------------------------- */
+    body.rose .sidebar,
+    body.rose .rz-sidebar,
+    body.rose nav.navbar-vertical,
+    body.rose .app-nav {
+        background: var(--rose-sidebar-solid) !important;
+        color: var(--rose-sidebar-text);
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+
+        body.rose .sidebar .nav-link,
+        body.rose .rz-navigation-menu .rz-link {
+            color: var(--rose-sidebar-text) !important;
+            background: transparent;
+            border-radius: 14px;
+            padding: .70rem 1rem;
+            margin: .35rem .5rem;
+            transition: background .2s ease, box-shadow .2s ease, color .2s ease;
+        }
+
+            body.rose .sidebar .nav-link:hover,
+            body.rose .rz-navigation-menu .rz-link:hover {
+                background: var(--rose-sidebar-hover);
+                color: var(--rose-text) !important;
+                box-shadow: 0 4px 14px rgba(0,0,0,.08);
+            }
+
+            body.rose .sidebar .nav-link.active,
+            body.rose .rz-navigation-menu .rz-state-active > .rz-link {
+                background: #FBF8F6 !important;
+                color: var(--rose-text) !important;
+                box-shadow: 0 12px 24px rgba(0,0,0,.12);
+            }
+
+            body.rose .sidebar .nav-link i,
+            body.rose .rz-navigation-menu .rz-link i {
+                opacity: .9;
+                margin-right: .55rem;
+            }
+
+    /* ------------------------- Glass paneli / grid ---------------------------- */
+    body.rose .rz-card,
+    body.rose .rz-dialog,
+    body.rose .rz-panel,
+    body.rose .rz-data-grid {
+        background: rgba(255,253,252,.78);
+        border: 1px solid var(--rose-border);
+        border-radius: 16px;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 22px 45px -20px rgba(53,33,24,.30), 0 8px 18px -10px rgba(53,33,24,.18);
+    }
+
+        body.rose .rz-data-grid .rz-grid-table,
+        body.rose .rz-data-grid .rz-data-grid-table {
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        body.rose .rz-data-grid .rz-header-cell {
+            background: #FAF4EF;
+            color: var(--rose-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--rose-border);
+        }
+
+        /* ------------------------------- Gumbi ----------------------------------- */
+        body.rose .rz-button.rz-primary,
+        body.rose .rz-button.rz-button-primary,
+        body.rose button.rz-button.rz-primary,
+        body.rose .rz-toolbar .rz-button.rz-primary,
+        body.rose .rz-card .rz-button.rz-primary,
+        body.rose .btn.btn-primary {
+            background: var(--rose-primary) !important;
+            border-color: var(--rose-primary) !important;
+            color: #fff !important;
+        }
+
+            body.rose .rz-button.rz-primary:hover,
+            body.rose .rz-button.rz-button-primary:hover,
+            body.rose .btn.btn-primary:hover {
+                background: var(--rose-primary-600) !important;
+                border-color: var(--rose-primary-600) !important;
+            }
+
+            body.rose .rz-button.rz-primary .rzi {
+                color: #fff !important;
+            }
+
+            body.rose .rz-button.rz-primary.rz-state-disabled,
+            body.rose .rz-button.rz-button-primary.rz-state-disabled,
+            body.rose .btn.btn-primary:disabled {
+                background: #D6B0A2 !important;
+                border-color: #D6B0A2 !important;
+                color: #fff !important;
+                opacity: 1 !important;
+                cursor: not-allowed;
+            }
+
+    /* sekundarni hover – bez plave */
+    body.rose .rz-button:not(.rz-primary):hover {
+        background: #F1E7E2 !important;
+        border-color: #E6D7CF !important;
+        color: var(--rose-text) !important;
+    }
+
+    /* ------------------------------- Alerts ---------------------------------- */
+    body.rose .alert-info,
+    body.rose .rz-message-info {
+        background: #F6EAE5 !important;
+        border-color: #E9D7CF !important;
+        color: #5A4F49 !important;
+    }
+
+    /* --------------------------- Focus ring (inputs) -------------------------- */
+    body.rose .rz-inputtext,
+    body.rose .form-control {
+        border: 1px solid var(--rose-border);
+    }
+
+        body.rose .rz-inputtext:focus,
+        body.rose .form-control:focus {
+            outline: 0 !important;
+            border-color: var(--rose-primary) !important;
+            box-shadow: 0 0 0 .20rem rgba(217,162,143,.35) !important;
+        }
+
+    /* --------------------- DropDown — CLASSIC “box u boxu” ------------------- */
+    /* Wrapper = jedini vidljivi okvir + fokus ring */
+    body.rose .rz-dropdown {
+        position: relative;
+        display: flex;
+        align-items: center;
+        width: 50%;
+        min-height: var(--rose-control-h);
+        padding: 0 !important;
+        background: #fff;
+        border: 1px solid var(--rose-border);
+        border-radius: 10px; /* malo kompaktnije */
+        box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+
+        body.rose .rz-dropdown:focus-within {
+            border-color: var(--rose-primary) !important;
+            box-shadow: 0 0 0 .20rem rgba(217,162,143,.35) !important;
+        }
+
+        /* Unutarnji label/input – bez okvira, ispunjava visinu */
+        body.rose .rz-dropdown .rz-dropdown-label,
+        body.rose .rz-dropdown .rz-inputtext {
+            height: var(--rose-control-h);
+            display: flex;
+            align-items: center;
+            padding: .4rem 2rem .4rem 2rem !important; /* prostor za ✕ i ▾ */
+            background: #fff !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            outline: 0 !important;
+            border-radius: inherit !important;
+            line-height: 1.2;
+        }
+
+        body.rose .rz-dropdown:focus-within .rz-dropdown-label,
+        body.rose .rz-dropdown:focus-within .rz-inputtext {
+            box-shadow: none !important;
+        }
+
+        body.rose .rz-dropdown .rz-placeholder {
+            color: var(--rose-muted);
+        }
+
+        /* Ikone ✕ i ▾ – malo sitnije da pašu visini */
+        body.rose .rz-dropdown .rz-clear,
+        body.rose .rz-dropdown .rz-dropdown-trigger {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0.8rem;
+            height: 1.1rem; /* smanjeno */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: .65;
+            color: var(--rose-text);
+        }
+
+        body.rose .rz-dropdown .rz-clear {
+            left: .6rem;
+        }
+
+        body.rose .rz-dropdown .rz-dropdown-trigger {
+            right: .6rem;
+        }
+
+            body.rose .rz-dropdown .rz-clear:hover,
+            body.rose .rz-dropdown .rz-dropdown-trigger:hover {
+                opacity: .9;
+            }
+
+    /* DropDown panel – pregledan */
+    body.rose .rz-dropdown-panel,
+    body.rose .rz-autocomplete-panel,
+    body.rose .rz-listbox {
+        background: rgba(255,253,252,.97) !important;
+        border: 1px solid var(--rose-border) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 18px 40px -20px rgba(53,33,24,.35), 0 8px 18px -12px rgba(53,33,24,.18) !important;
+        overflow: hidden !important;
+    }
+
+        /* samo HOVER boja po stavci (BEZ trajnog fill-a) */
+        body.rose .rz-dropdown-items .rz-dropdown-item:hover,
+        body.rose .rz-listbox .rz-listbox-item:hover {
+            background: #F4E9E3;
+            color: var(--rose-text);
+        }
+
+        /* makni TRAJNI fill koji Radzen zna držati preko highlight/selected klasa */
+        body.rose .rz-dropdown-panel .rz-state-highlight {
+            background: transparent;
+            color: inherit;
+        }
+
+        body.rose .rz-dropdown-panel .rz-state-selected,
+        body.rose .rz-dropdown-panel .rz-state-active,
+        body.rose .rz-dropdown-items .rz-state-selected,
+        body.rose .rz-dropdown-items .rz-state-active,
+        body.rose .rz-dropdown-items .rz-dropdown-item[aria-selected="true"],
+        body.rose .rz-listbox .rz-state-selected,
+        body.rose .rz-listbox .rz-state-active,
+        body.rose .rz-listbox .rz-listbox-item[aria-selected="true"] {
+            background: transparent !important;
+            color: inherit !important;
+            font-weight: 400;
+        }
+
+    /* ------------------------------- Badgevi ---------------------------------- */
+    body.rose .rz-badge,
+    body.rose .rz-badge-default,
+    body.rose .rz-badge-info,
+    body.rose .rz-badge-primary,
+    body.rose .rz-badge-secondary,
+    body.rose .rz-badge-success,
+    body.rose .rz-badge-warning,
+    body.rose .rz-badge-danger {
+        background: #E7C9BE !important;
+        color: #4B3A34 !important;
+        border: none !important;
+        border-radius: 9999px !important;
+        font-weight: 700;
+        padding: .2rem .6rem;
+        font-size: .72rem;
+    }
+
+    /* --------------------------- Tipografija naslova -------------------------- */
+    body.rose h1, body.rose h2, body.rose h3 {
+        letter-spacing: .2px;
+    }
+
+/* --------------------------- DataGrid helperi ----------------------------- */
+.rg-fixed .rz-data-grid-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.rg-fixed .rz-cell {
+    vertical-align: top;
+    line-height: 1.25;
+}
+
+.cell-ellipsis {
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cell-wrap, .note-wrap {
+    display: block;
+    width: 100%;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+
+/* ------------- Screen-reader helper input – potpuno skriven -------------- */
+body.rose .rz-helper-hidden-accessible input,
+body.rose .rz-helper-hidden-accessible input:focus {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    left: -9999px !important;
+}
+
+/* ---------------- Toolbar: label uz dropdown (u jednom redu) -------------- */
+.filters-toolbar .filter-inline {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+}
+
+    .filters-toolbar .filter-inline .form-label {
+        margin: 0;
+        white-space: nowrap;
+        font-weight: 300;
+    }
+
+    .filters-toolbar .filter-inline .rz-dropdown {
+        flex: 1;
+        min-width: 120px;
+        height: var(--rose-control-h);
+    }
+/* Navbar: učini "Log out" (btn-link) crnim kao ostalo */
+body.rose .top-row .btn-link,
+body.rose .navbar .btn-link {
+    color: var(--rose-text) !important;
+    text-decoration: none !important;
+}
+
+    body.rose .top-row .btn-link:hover,
+    body.rose .navbar .btn-link:hover,
+    body.rose .top-row .btn-link:focus,
+    body.rose .navbar .btn-link:focus {
+        color: var(--rose-text) !important;
+        text-decoration: none !important;
+    }

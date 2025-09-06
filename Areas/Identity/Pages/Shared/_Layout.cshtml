@@ -1,0 +1,30 @@
+﻿@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] - TerminBooking</title>
+
+    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
+    <!-- tvoja tema -->
+    <link rel="stylesheet" href="~/css/theme-rose.css" />
+</head>
+<body class="rose">
+    <!-- gornja traka u istom stilu -->
+    <header class="top-row">
+        <div class="container d-flex align-items-center justify-content-between py-2">
+            <a class="navbar-brand text-dark" asp-area="" asp-page="/Index">TerminBooking</a>
+            <partial name="_LoginPartial" />
+        </div>
+    </header>
+
+    <!-- sadržaj identity stranica -->
+    <main class="container py-4 account">
+        @RenderBody()
+    </main>
+
+    @RenderSection("Scripts", required: false)
+</body>
+</html>

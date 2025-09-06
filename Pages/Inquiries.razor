@@ -1,107 +1,166 @@
 ﻿@page "/inquiries"
 @using Microsoft.EntityFrameworkCore
 @using TerminBooking.Domain
+@using Radzen
 @inject TerminBooking.Data.ApplicationDbContext Db
+@inject NotificationService NotificationService
 
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <h3>Upiti s kontakt forme</h3>
 
-<div class="row g-3 align-items-end">
-    <div class="col-md-3">
-        <label class="form-label">Status</label>
-        <select class="form-select" @bind="filterStatus">
-            <option value="">(svi)</option>
-            <option value="@ContactStatus.New">Novi</option>
-            <option value="@ContactStatus.Replied">Odgovoreno</option>
-            <option value="@ContactStatus.Closed">Zatvoreno</option>
-        </select>
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">Pretraga</label>
-        <input class="form-control" @bind="search" placeholder="Ime / email / telefon / sadrži..." />
-    </div>
-    <div class="col-md-2">
-        <button class="btn btn-primary w-100" @onclick="LoadAsync">Osvježi</button>
-    </div>
-</div>
+<RadzenCard class="rz-my-3">
+    <ChildContent>
+        <RadzenStack class="filters-toolbar" Orientation="Orientation.Horizontal" AlignItems="AlignItems.End" Gap="1rem" Wrap="FlexWrap.Wrap">
+            <div class="filter-inline" style="min-width:220px">
+                <label class="form-label">Status</label>
+                <RadzenDropDown TItem="StatusOption" TValue="ContactStatus?"
+                                Data="@statusOptions"
+                                TextProperty="Text" ValueProperty="Value"
+                                @bind-Value="filterStatus"
+                                AllowClear="true" Placeholder="(svi)"
+                                Change="@(args => LoadAsync())" />
+            </div>
 
-@if (loading)
+            <div style="min-width:280px">
+                <label class="form-label">Pretraga</label>
+                <RadzenTextBox @bind-Value="search"
+                               Placeholder="Ime / email / telefon / sadrži..."
+                               Style="max-width:360px"
+                               Change="@(args => LoadAsync())" />
+            </div>
+
+            <RadzenButton Icon="refresh" Text="Osvježi"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Click="LoadAsync" Disabled="@loading" />
+            <RadzenButton Icon="backspace" Text="Očisti filtere"
+                          ButtonStyle="ButtonStyle.Light"
+                          Click="ClearFilters" Disabled="@loading" />
+        </RadzenStack>
+    </ChildContent>
+</RadzenCard>
+
+@if (loading && items.Count == 0)
 {
-    <p class="text-muted mt-3">Učitavam...</p>
+    <div class="text-muted">Učitavam…</div>
 }
 else if (items.Count == 0)
 {
-    <div class="alert alert-info mt-3">Nema rezultata.</div>
+    <div class="alert alert-info">Nema rezultata.</div>
 }
 else
 {
-    <div class="table-responsive mt-3">
-        <table class="table table-sm table-hover align-middle">
-            <thead>
-                <tr>
-                    <th>Vrijeme</th>
-                    <th>Ime</th>
-                    <th>Email</th>
-                    <th>Telefon</th>
-                    <th>Naslov</th>
-                    <th>Status</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var m in items)
-                {
-                    <tr class="@RowClass(m)">
-                        <td>@m.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</td>
-                        <td>@m.FullName</td>
-                        <td>@m.Email</td>
-                        <td>@m.Phone</td>
-                        <td>@m.Subject</td>
-                        <td>@m.Status</td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Select(m)">Otvori</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+    <RadzenDataGrid Data="@items" TItem="ContactMessage"
+                    class="rg-fixed"
+                    AllowSorting="true"
+                    AllowPaging="true" PageSize="25"
+                    RowHover="true" Responsive="false"
+                    LoadingPanelText="Učitavam…"
+                    CellRender="OnCellRender" RowRender="OnRowRender"
+                    Style="border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.08); overflow:visible">
+        <Columns>
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Vrijeme" Width="150px">
+                <Template Context="m">@m.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Ime" Width="16%">
+                <Template Context="m"><div class="cell-ellipsis" title="@m.FullName">@m.FullName</div></Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Email" Width="17%">
+                <Template Context="m"><div class="cell-ellipsis" title="@m.Email">@m.Email</div></Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Telefon" Width="12%">
+                <Template Context="m"><div class="cell-ellipsis" title="@m.Phone">@m.Phone</div></Template>
+            </RadzenDataGridColumn>
+
+            <!-- Naslov sužen + wrap -->
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Naslov" Width="20%">
+                <Template Context="m"><div class="note-wrap" title="@m.Subject">@m.Subject</div></Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Status" Width="100px">
+                <Template Context="m">
+                    <RadzenBadge Text="@StatusText(m.Status)" Class="@StatusClass(m.Status)" />
+                </Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="ContactMessage" Title="Detalji" Width="64px">
+                <Template Context="m">
+                    <span title="Otvori detalje">
+                        <RadzenButton Icon="chevron_right"
+                                      Size="ButtonSize.Small"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Click="@(()=> Select(m))" />
+                    </span>
+                </Template>
+            </RadzenDataGridColumn>
+
+        </Columns>
+
+        <EmptyTemplate>
+            <div class="text-muted p-3">Nema rezultata.</div>
+        </EmptyTemplate>
+    </RadzenDataGrid>
 }
 
 @if (selected is not null)
 {
-    <hr />
-    <h5>Detalji</h5>
-    <div class="row g-3">
-        <div class="col-md-3"><strong>Ime:</strong> @selected.FullName</div>
-        <div class="col-md-3"><strong>Email:</strong> @selected.Email</div>
-        <div class="col-md-3"><strong>Telefon:</strong> @selected.Phone</div>
-        <div class="col-md-3"><strong>Vrijeme:</strong> @selected.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</div>
-    </div>
-    <div class="mt-2"><strong>Naslov:</strong> @selected.Subject</div>
-    <div class="mt-2">
-        <strong>Poruka:</strong>
-        <pre class="mt-1" style="white-space:pre-wrap">@selected.Body</pre>
-    </div>
+    <RadzenCard class="rz-my-4">
+        <ChildContent>
+            <div class="d-flex align-items-center gap-2 rz-mb-3">
+                <strong>Detalji upita</strong>
+                <RadzenBadge Text="@StatusText(selected.Status)" Class="@StatusClass(selected.Status)" />
+            </div>
 
-    <div class="mt-3">
-        <label class="form-label">Interna bilješka</label>
-        <textarea class="form-control" rows="3" @bind="selected.InternalNotes"></textarea>
-    </div>
+            <div class="row g-3">
+                <div class="col-md-3"><strong>Ime:</strong> @selected.FullName</div>
+                <div class="col-md-3"><strong>Email:</strong> @selected.Email</div>
+                <div class="col-md-3"><strong>Telefon:</strong> @selected.Phone</div>
+                <div class="col-md-3"><strong>Vrijeme:</strong> @selected.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy. HH:mm")</div>
+            </div>
 
-    <div class="mt-3 d-flex gap-2 flex-wrap">
-        @if (!string.IsNullOrWhiteSpace(selected.Email))
-        {
-            <a class="btn btn-primary"
-               href="@BuildGmailCompose(selected.Email, $"Re: {selected.Subject}", BuildReplyBody(selected))"
-               target="_blank" rel="noopener">
-                Odgovori u Gmailu
-            </a>
-        }
-        <button class="btn btn-success" @onclick="() => UpdateStatus(ContactStatus.Replied)">Označi kao odgovoreno</button>
-        <button class="btn btn-link" @onclick="() => { selected = null; }">Zatvori detalje</button>
-    </div>
+            <div class="mt-2"><strong>Naslov:</strong> @selected.Subject</div>
+
+            <div class="mt-2">
+                <strong>Poruka:</strong>
+                <div class="note-wrap rz-p-2 rz-mt-1" style="border:1px solid var(--rose-border); border-radius:8px;">
+                    @selected.Body
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <label class="form-label">Interna bilješka</label>
+                <RadzenTextArea @bind-Value="selected.InternalNotes" Rows="4" Style="width:100%" />
+            </div>
+
+            <div class="mt-3 d-flex gap-2 flex-wrap">
+                @if (!string.IsNullOrWhiteSpace(selected.Email))
+                {
+                    <!-- Klik: prvo označi kao odgovoreno, zatim otvori Gmail u novoj kartici -->
+                    <a class="rz-button rz-button-primary"
+                       href="@BuildGmailCompose(selected.Email, $"Re: {selected.Subject}", BuildReplyBody(selected))"
+                       target="_blank" rel="noopener"
+                       @onclick="(async (Microsoft.AspNetCore.Components.Web.MouseEventArgs e) => await MarkAsRepliedAsync(selected))">
+                        <span class="rz-button-text">Odgovori u Gmailu</span>
+                    </a>
+                }
+
+                <RadzenButton Text="Označi kao zatvoreno"
+                              ButtonStyle="ButtonStyle.Light"
+                              Click="@(()=> UpdateStatus(ContactStatus.Closed))" />
+
+                <RadzenButton Text="Zatvori detalje"
+                              ButtonStyle="ButtonStyle.Light"
+                              Click="@(()=> selected = null)" />
+
+                <RadzenButton Icon="save" Text="Spremi bilješku"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Click="SaveNoteAsync" />
+            </div>
+        </ChildContent>
+    </RadzenCard>
 }
 
 @code {
@@ -111,6 +170,13 @@ else
 
     private string? search;
     private ContactStatus? filterStatus;
+
+    private readonly List<StatusOption> statusOptions = new()
+    {
+        new StatusOption("Novi", ContactStatus.New),
+        new StatusOption("Odgovoreno", ContactStatus.Replied),
+        new StatusOption("Zatvoreno", ContactStatus.Closed),
+    };
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -144,7 +210,27 @@ else
         loading = false;
     }
 
+    private void ClearFilters()
+    {
+        filterStatus = null;
+        search = null;
+        _ = LoadAsync();
+    }
+
     private void Select(ContactMessage m) => selected = m;
+
+    private async Task SaveNoteAsync()
+    {
+        if (selected is null) return;
+        await Db.SaveChangesAsync();
+        NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Spremljeno",
+                Detail = "Bilješka je spremljena.",
+                Duration = 2000
+            });
+    }
 
     private async Task UpdateStatus(ContactStatus st)
     {
@@ -152,14 +238,74 @@ else
         selected.Status = st;
         await Db.SaveChangesAsync();
         await LoadAsync();
+
+        NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Status ažuriran",
+                Detail = $"Upit označen kao: {StatusText(st)}",
+                Duration = 2000
+            });
     }
 
-    private static string RowClass(ContactMessage m)
-        => m.Status == ContactStatus.New ? "table-warning"
-         : m.Status == ContactStatus.Replied ? "table-success"
-         : "";
+    // Klik na “Odgovori u Gmailu” => odmah označi kao Odgovoreno
+    private async Task MarkAsRepliedAsync(ContactMessage m)
+    {
+        if (m is null) return;
+        if (m.Status != ContactStatus.Replied)
+        {
+            m.Status = ContactStatus.Replied;
+            await Db.SaveChangesAsync();
+            await LoadAsync();
 
-    // Gmail "compose" prozor u novoj kartici
+            NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Info,
+                    Summary = "Označeno kao odgovoreno",
+                    Detail = "Status je ažuriran.",
+                    Duration = 2000
+                });
+        }
+    }
+
+    // Bojanje reda za "Novi"
+    void OnRowRender(RowRenderEventArgs<ContactMessage> args)
+    {
+        if (args.Data.Status == ContactStatus.New)
+        {
+            args.Attributes["style"] = "background:#fff8ef;";
+        }
+    }
+
+    // Prelamanje “Naslov” + desni padding zadnje kolone
+    void OnCellRender(DataGridCellRenderEventArgs<ContactMessage> args)
+    {
+        var title = args.Column?.Title?.ToString();
+
+        if (string.Equals(title, "Naslov", StringComparison.OrdinalIgnoreCase))
+        {
+            SetCellStyle(args, "white-space: normal; vertical-align: top; word-break: break-word;");
+        }
+
+        // Prazan Title = akcijska kolona (ovdje nije prazan, ali ostavljamo helper)
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            SetCellStyle(args, "padding-right:12px;");
+        }
+    }
+
+    static void SetCellStyle(DataGridCellRenderEventArgs<ContactMessage> args, string style)
+    {
+        if (args.Attributes.TryGetValue("style", out var existing) && existing is string s && !string.IsNullOrWhiteSpace(s))
+        {
+            args.Attributes["style"] = s.TrimEnd().EndsWith(";") ? $"{s} {style}" : $"{s}; {style}";
+        }
+        else
+        {
+            args.Attributes["style"] = style;
+        }
+    }
+
     private static string BuildGmailCompose(string to, string? subject = null, string? body = null)
     {
         var baseUrl = "https://mail.google.com/mail/";
@@ -186,4 +332,23 @@ Originalna poruka ({when}):
 Lijep pozdrav,
 ";
     }
+
+    private static string StatusText(ContactStatus st) => st switch
+    {
+        ContactStatus.New => "Novi",
+        ContactStatus.Replied => "Odgovoreno",
+        ContactStatus.Closed => "Zatvoreno",
+        _ => st.ToString()
+    };
+
+    // >>> NOVO: klasa za badge (boje rješava CSS)
+    private static string StatusClass(ContactStatus st) => st switch
+    {
+        ContactStatus.New => "badge-new",
+        ContactStatus.Replied => "badge-replied",
+        ContactStatus.Closed => "badge-closed",
+        _ => ""
+    };
+
+    private record StatusOption(string Text, ContactStatus Value);
 }

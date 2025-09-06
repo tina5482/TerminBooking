@@ -2,15 +2,16 @@
 @using TerminBooking.Data
 @using TerminBooking.Domain
 @using Microsoft.EntityFrameworkCore
+@using Radzen
 @inject ApplicationDbContext Db
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@implements IDisposable
 
-<h3>Bookirani termini — danas</h3>
+<h3>Rezervirani termini — danas</h3>
 
 <div class="d-flex gap-2 mb-3">
-    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadToday" disabled="@_isLoading">
-        @(_isLoading ? "Učitavam…" : "Osvježi")
-    </button>
+    <RadzenButton Icon="refresh" Text="Osvježi" ButtonStyle="ButtonStyle.Light"
+                  Click="LoadToday" Disabled="@_isLoading" />
     <span class="text-muted small align-self-center">
         Auto-osvježavanje svakih 15 s.
     </span>
@@ -26,31 +27,41 @@ else if (booked.Count == 0)
 }
 else
 {
-    <table class="table table-sm">
-        <thead>
-            <tr>
-                <th>Vrijeme</th>
-                <th>Djelatnik</th>
-                <th>Usluga</th>
-                <th>Napomena</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var a in booked)
-            {
-                <tr>
-                    <td>@a.Start.ToString("HH:mm")–@a.End.ToString("HH:mm")</td>
-                    <td>@a.Staff?.Name</td>
-                    <td>@a.Service?.Name</td>
-                    <td>@a.Notes</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <RadzenDataGrid Data="@booked" TItem="Appointment"
+                    class="rg-fixed"
+                    AllowFiltering="false"
+                    AllowSorting="true"
+                    AllowPaging="true" PageSize="25"
+                    RowHover="true" Responsive="false"
+                    CellRender="OnCellRender"
+                    Style="border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.08)">
+        <Columns>
+            <RadzenDataGridColumn TItem="Appointment" Title="Vrijeme" Width="140px">
+                <Template Context="a">@a.Start.ToString("HH:mm")–@a.End.ToString("HH:mm")</Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="Appointment" Title="Djelatnik" Width="22%">
+                <Template Context="a"><div class="cell-ellipsis">@a.Staff?.Name</div></Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="Appointment" Title="Usluga" Width="26%">
+                <Template Context="a"><div class="cell-ellipsis">@a.Service?.Name</div></Template>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="Appointment" Title="Napomena">
+                <Template Context="a">
+                    <div class="note-wrap" title="@a.Notes">@a.Notes</div>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+
+        <EmptyTemplate>
+            <div class="text-muted p-3">Nema bookiranih termina za danas.</div>
+        </EmptyTemplate>
+    </RadzenDataGrid>
 }
 
-@code
-{
+@code {
     private List<Appointment> booked = new();
     private bool _isLoading;
 
@@ -61,7 +72,7 @@ else
     {
         await LoadToday();
 
-        // auto-refresh svakih 15s
+        // auto-refresh svakih 15 s
         _cts = new CancellationTokenSource();
         _timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(15));
         _ = AutoRefreshAsync();
@@ -79,10 +90,7 @@ else
                 StateHasChanged();
             }
         }
-        catch (OperationCanceledException)
-        {
-            // ignore
-        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task LoadToday()
@@ -110,5 +118,18 @@ else
         _cts?.Cancel();
         _timer?.Dispose();
         _cts?.Dispose();
+    }
+
+    // Wrap Napomena na <td> (isto kao na Appointments)
+    void OnCellRender(DataGridCellRenderEventArgs<Appointment> args)
+    {
+        var isNoteCol = string.Equals(args.Column?.Title?.ToString(), "Napomena", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(args.Column?.Property, "Notes", StringComparison.OrdinalIgnoreCase);
+
+        if (isNoteCol)
+        {
+            args.Attributes["style"] =
+                "white-space: normal; vertical-align: top; word-break: break-word;";
+        }
     }
 }
