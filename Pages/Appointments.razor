@@ -1,9 +1,9 @@
 ﻿@page "/appointments"
-@using System.Timers
 @using TerminBooking.Data
 @using TerminBooking.Domain
 @using Microsoft.EntityFrameworkCore
 @using Radzen
+@using Radzen.Blazor
 @inject ApplicationDbContext Db
 @inject DialogService DialogService
 
@@ -13,7 +13,9 @@
 <h3>Upravljanje terminima</h3>
 
 <!-- Odabir djelatnika (RadzenDropDown) -->
-<div class="mb-3" style="max-width:420px">
+<div class="mb-3" style="max-width:420px"
+     @onfocusin="() => _pauseRefresh = true"
+     @onfocusout="() => _pauseRefresh = false">
     <label class="form-label">Djelatnik</label>
     <RadzenDropDown Data="@staffList"
                     TItem="Staff" TValue="int?"
@@ -159,59 +161,69 @@ else
     private void OnClientEmailChanged(ChangeEventArgs e) => add_ClientEmail = e?.Value?.ToString();
     private void OnClientPhoneChanged(ChangeEventArgs e) => add_ClientPhone = e?.Value?.ToString();
 
-    // ===== Auto-refresh timer (.NET) =====
-    private System.Timers.Timer? _refreshTimer;
+    // ===== Auto-refresh: PeriodicTimer (+ pauza dok korisnik interaktira) =====
     private bool _autoRefreshing = false;
+    private bool _pauseRefresh = false;
+    private CancellationTokenSource? _refreshCts;
 
     protected override async Task OnInitializedAsync()
     {
-        // svježi upiti
         staffList = await Db.Staff.AsNoTracking()
-                     .Where(x => x.IsActive)
-                     .OrderBy(x => x.Name)
-                     .ToListAsync();
+                 .Where(x => x.IsActive)
+                 .OrderBy(x => x.Name)
+                 .ToListAsync();
 
         if (staffList.Any())
             SelectedStaffId = staffList.First().Id;
 
-        StartAutoRefresh(); // pokreni timer
         await LoadDayAsync();
+
+        StartAutoRefreshLoop(); // pokreni PeriodicTimer petlju
     }
 
-    private void StartAutoRefresh()
+    private void StartAutoRefreshLoop()
     {
-        _refreshTimer = new System.Timers.Timer(5000); // 5s
-        _refreshTimer.AutoReset = true;
-        _refreshTimer.Elapsed += OnRefreshTimerElapsed;
-        _refreshTimer.Start();
+        _refreshCts?.Cancel();
+        _refreshCts = new CancellationTokenSource();
+        _ = RefreshLoopAsync(_refreshCts.Token);
     }
 
-    private async void OnRefreshTimerElapsed(object? sender, ElapsedEventArgs e)
+    private async Task RefreshLoopAsync(CancellationToken ct)
     {
-        // Timer radi na pozadinskom threadu -> sve UI akcije kroz InvokeAsync
-        await InvokeAsync(async () =>
-    {
-        if (_autoRefreshing || !SelectedStaffId.HasValue) return;
-        _autoRefreshing = true;
+        // svakih 5 sekundi
+        var timer = new System.Threading.PeriodicTimer(TimeSpan.FromSeconds(5));
         try
         {
-            await LoadDayAsync();
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (_autoRefreshing || _pauseRefresh || !SelectedStaffId.HasValue) continue;
+
+                _autoRefreshing = true;
+                try
+                {
+                    // sve UI stvari kroz InvokeAsync
+                    await InvokeAsync(LoadDayAsync);
+                }
+                finally
+                {
+                    _autoRefreshing = false;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // normalno pri gašenju
         }
         finally
         {
-            _autoRefreshing = false;
+            timer.Dispose();
         }
-    });
     }
 
     public void Dispose()
     {
-        if (_refreshTimer is not null)
-        {
-            _refreshTimer.Elapsed -= OnRefreshTimerElapsed;
-            _refreshTimer.Stop();
-            _refreshTimer.Dispose();
-        }
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
     }
 
     // ===== UI handlers =====
@@ -328,7 +340,10 @@ else
         if (servicesForStaff.Any())
             add_ServiceId = servicesForStaff.First().Id;
 
-        await DialogService.OpenAsync("Dodaj blok (Booked)", ds => @<div>
+        _pauseRefresh = true; // pauziraj refresh dok je dijalog otvoren
+
+        await DialogService.OpenAsync("Dodaj blok (Booked)", ds => @<div @onfocusin="() => _pauseRefresh = true"
+                                                                             @onfocusout="() => _pauseRefresh = false">
         <div class="mb-2" style="max-width:420px">
             <label class="form-label">Usluga</label>
             <RadzenDropDown Data="@servicesForStaff"
@@ -385,12 +400,15 @@ else
             <RadzenButton Text="Spremi" ButtonStyle="ButtonStyle.Primary" Click="SaveAddBlockAsync" Disabled="@isSaving" />
         </div>
     </div>);
+
+        _pauseRefresh = false; // nastavi refresh nakon zatvaranja
     }
 
     void CloseDialog()
     {
         ResetAddBlockForm();
         DialogService.Close();
+        _pauseRefresh = false;
     }
 
     private async Task ConfirmDeleteAsync(int id)
