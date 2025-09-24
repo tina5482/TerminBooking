@@ -20,14 +20,16 @@ namespace TerminBooking.Services
             // Učitaj sve termine za taj dan i tog djelatnika
             var sameDay = await db.Appointments
                 .Where(a => a.StaffId == staffId
-                         && a.Start >= dayStart && a.End <= dayEnd)
+                         && a.Start < dayEnd && a.End > dayStart)
                 .ToListAsync();
 
-            // Sastavi skup postojećih 30-min slotova
-            var existing30 = new HashSet<long>(
-                sameDay
-                  .Where(a => (a.End - a.Start).TotalMinutes == 30)
-                  .Select(a => a.Start.Ticks));
+            // Označi sve zauzete 30-min "kockice" iz SVIH termina (bilo kojeg trajanja)
+            var occupiedTicks = new HashSet<long>();
+            foreach (var a in sameDay)
+            {
+                for (var t = a.Start; t < a.End; t = t.AddMinutes(30))
+                    occupiedTicks.Add(t.Ticks);
+            }
 
             var toAdd = new List<Appointment>();
 
@@ -35,9 +37,8 @@ namespace TerminBooking.Services
             while (cur < dayEnd)
             {
                 var next = cur.AddMinutes(30);
-                if (!existing30.Contains(cur.Ticks))
+                if (!occupiedTicks.Contains(cur.Ticks))
                 {
-                    // dodaj samo 30-min “Free”
                     toAdd.Add(new Appointment
                     {
                         StaffId = staffId,
@@ -47,6 +48,7 @@ namespace TerminBooking.Services
                     });
                 }
                 cur = next;
+
             }
 
             if (toAdd.Count > 0)
